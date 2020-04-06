@@ -47,6 +47,9 @@ volatile char b1 = 0;
 volatile char b2 = 0;
 volatile char b3 = 0;
 volatile char b4 = 0;
+volatile char flag_tc1 = 0;
+volatile char flag_tc2 = 0;
+volatile char flag_tc3 = 0;
 
 
 /**
@@ -74,11 +77,65 @@ void Button4_Handler(void)
 	b4 = 1;
 }
 
+
+
+void TC1_Handler(void){
+	volatile uint32_t ul_dummy;
+
+	/****************************************************************
+	* Devemos indicar ao TC que a interrupção foi satisfeita.
+	******************************************************************/
+	ul_dummy = tc_get_status(TC0, 1);
+
+	/* Avoid compiler warning */
+	UNUSED(ul_dummy);
+
+	/** Muda o estado do LED */
+	flag_tc1 = 1;
+}
+
+void TC2_Handler(void){
+	volatile uint32_t ul_dummy;
+
+	/****************************************************************
+	* Devemos indicar ao TC que a interrupção foi satisfeita.
+	******************************************************************/
+	ul_dummy = tc_get_status(TC0, 1);
+
+	/* Avoid compiler warning */
+	UNUSED(ul_dummy);
+
+	/** Muda o estado do LED */
+	flag_tc2 = 1;
+}
+
+void TC3_Handler(void){
+	volatile uint32_t ul_dummy;
+
+	/****************************************************************
+	* Devemos indicar ao TC que a interrupção foi satisfeita.
+	******************************************************************/
+	ul_dummy = tc_get_status(TC0, 1);
+
+	/* Avoid compiler warning */
+	UNUSED(ul_dummy);
+
+	/** Muda o estado do LED */
+	flag_tc3 = 1;
+}
+
+
 /************************************************************************/
 /* PROTOTYPES                                                           */
 /************************************************************************/
 
 void LED_init();
+
+void pisca_led1(int n, int t);
+void pisca_led2(int n, int t);
+void pisca_led3(int n, int t);
+
+void TC_init1(Tc * TC, int ID_TC, int TC_CHANNEL, int freq);
 
 
 
@@ -95,7 +152,72 @@ void LED_init(){
 	
 	pmc_enable_periph_clk(LED3_OLED_PIO_ID);
 	pio_set_output(LED3_OLED_PIO , LED3_OLED_IDX_MASK, 1, 0, 0);
-};
+}
+
+void pisca_led1(int n, int t){
+	for (int i=0;i<n;i++){
+		pio_clear(LED1_OLED_PIO, LED1_OLED_IDX_MASK);
+		delay_ms(t);
+		pio_set(LED1_OLED_PIO, LED1_OLED_IDX_MASK);
+		delay_ms(t);
+	}
+}
+
+void pisca_led2(int n, int t){
+	for (int i=0;i<n;i++){
+		pio_clear(LED2_OLED_PIO, LED2_OLED_IDX_MASK);
+		delay_ms(t);
+		pio_set(LED2_OLED_PIO, LED2_OLED_IDX_MASK);
+		delay_ms(t);
+	}
+}
+
+void pisca_led3(int n, int t){
+	for (int i=0;i<n;i++){
+		pio_clear(LED3_OLED_PIO, LED3_OLED_IDX_MASK);
+		delay_ms(t);
+		pio_set(LED3_OLED_PIO, LED3_OLED_IDX_MASK);
+		delay_ms(t);
+	}
+}
+
+
+//**
+//* Configura TimerCounter (TC) para gerar uma interrupcao no canal (ID_TC e TC_CHANNEL)
+//* na taxa de especificada em freq.
+//*/
+void TC_init1(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
+	uint32_t ul_div;
+	uint32_t ul_tcclks;
+	uint32_t ul_sysclk = sysclk_get_cpu_hz();
+
+	/* Configura o PMC */
+	/* O TimerCounter é meio confuso
+	o uC possui 3 TCs, cada TC possui 3 canais
+	TC0 : ID_TC0, ID_TC1, ID_TC2
+	TC1 : ID_TC3, ID_TC4, ID_TC5
+	TC2 : ID_TC6, ID_TC7, ID_TC8
+	*/
+	pmc_enable_periph_clk(ID_TC);
+
+	/** Configura o TC para operar em  4Mhz e interrupçcão no RC compare */
+	tc_find_mck_divisor(freq, ul_sysclk, &ul_div, &ul_tcclks, ul_sysclk);
+	tc_init(TC, TC_CHANNEL, ul_tcclks | TC_CMR_CPCTRG);
+	tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq);
+
+	/* Configura e ativa interrupçcão no TC canal 0 */
+	/* Interrupção no C */
+	NVIC_EnableIRQ((IRQn_Type) ID_TC);
+	tc_enable_interrupt(TC, TC_CHANNEL, TC_IER_CPCS);
+
+	/* Inicializa o canal 0 do TC */
+	tc_start(TC, TC_CHANNEL);
+}
+
+
+
+
+
 
 
 int main (void)
@@ -107,6 +229,10 @@ int main (void)
   // Init OLED
 	gfx_mono_ssd1306_init();
 	LED_init();
+	
+	TC_init1(TC0, ID_TC1, 1, 5);
+	TC_init1(TC1, ID_TC3, 1, 10);
+	TC_init1(TC2, ID_TC6, 1, 1);
 	
 	
 	//Interrupts
@@ -134,6 +260,20 @@ int main (void)
 
   /* Insert application code here, after the board has been initialized. */
 	while(1) {
+		if(flag_tc1 || flag_tc2 || flag_tc3){
+			if(flag_tc1){
+				pisca_led1(1,10);
+				flag_tc1 = 0;
+			}
+			if(flag_tc2){
+				pisca_led2(1,10);
+				flag_tc2 = 0;
+			}
+			if(flag_tc3){
+				pisca_led3(1,10);
+				flag_tc3 = 0;
+			}
+		}
 
 	}
 }
